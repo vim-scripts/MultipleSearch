@@ -1,7 +1,7 @@
 " File:		MultipleSearch.vim (global plugin)
-" Last Changed: 2003 Oct 13
+" Last Changed: 2003 Oct 14
 " Maintainer:	Dan Sharp <dwsharp at hotmail dot com>
-" Version:	1.2
+" Version:	1.2.1
 " License:      Vim License
 
 if exists('loaded_multiplesearch')
@@ -31,10 +31,12 @@ let loaded_multiplesearch = 1
 " all currently listed buffers (i.e., appear in the output of :ls).  The match
 " in all buffers will have the same color.  This is different than 
 " :bufdo Search <pattern> because in that case, each buffer will highlight the
-" match in a different color.  Thanks to Jeff Mei for the suggestion!
+" match in a different color.  Thanks to Jeff Mei for the suggestion and
+" testing!
 " 
 " To clear the highlighting, issue the command
-" :SearchReset
+" :SearchReset (for the current buffer) or :SearchBuffersReset (for all
+" buffers).
 " 
 " You can specify the maximum number of different colors to use by setting the
 " g:MultipleSearchMaxColors variable in your .vimrc.  The default setting is
@@ -207,6 +209,7 @@ function! MultipleSearch(allBuffers, forwhat)
 	let counter = 1
 	let bufCount = bufnr("$")
 	let current = bufnr("%")
+	let lz_save = &lazyredraw
 
 	" Loop through all the buffers and perform the search in each one.
 	while counter <= bufCount
@@ -217,22 +220,40 @@ function! MultipleSearch(allBuffers, forwhat)
 	    let counter = counter + 1
 	endwhile
 	exec "buffer " . current
+	let &lazyredraw = lz_save
     else
+	" Otherwise, just search in the current buffer.
 	call s:DoSearch(useSearch, a:forwhat)
     endif
 
 endfunction
 
+" ---
+" DoReset: Clear the highlighting
+" ---
+function! s:DoReset()
+    let seq = 0
+    while seq < s:MaxColors
+	execute 'syntax clear MultipleSearch' . seq
+	let seq = seq + 1
+    endwhile
+endfunction
+
 " -----
 " MultipleSearchReset: Clear all the current search selections.
 " -----
-function! s:MultipleSearchReset()
+function! s:MultipleSearchReset(allBuffers)
     let s:colorToUse = 0
-    let seq = 0
-    while seq < s:MaxColors
-        execute 'syntax clear MultipleSearch' . seq
-        let seq = seq + 1
-    endwhile
+    if a:allBuffers
+	" If a:allBuffers is on, we want to clear the match in all
+	" currently listed buffers.
+	let current = bufnr("%")
+	bufdo call s:DoReset()
+	execute "buffer " . current
+    else
+	" Otherwise, just clear the current buffer.
+	call s:DoReset()
+    endif
 endfunction
 
 " Initialize the script the first time through.
@@ -246,7 +267,13 @@ let &cpo = s:save_cpo
 " Clear the current search selections and start over with the first color in
 " the sequence.
 if !(exists(":SearchReset") == 2)
-    command -nargs=0 SearchReset :silent call <SID>MultipleSearchReset() 
+    command -nargs=0 SearchReset :silent call <SID>MultipleSearchReset(0) 
+endif
+
+" Clear the current search selections and start over with the first color in
+" the sequence.
+if !(exists(":SearchBuffersReset") == 2)
+    command -nargs=0 SearchBuffersReset :silent call <SID>MultipleSearchReset(1) 
 endif
 
 " Reinitialize the script after changing one of the global preferences.
