@@ -1,7 +1,7 @@
 " File:		MultipleSearch.vim (global plugin)
-" Last Changed: 2002 Nov 18
+" Last Changed: 2003 Oct 13
 " Maintainer:	Dan Sharp <dwsharp at hotmail dot com>
-" Version:	1.1
+" Version:	1.2
 " License:      Vim License
 
 if exists('loaded_multiplesearch')
@@ -26,6 +26,12 @@ let loaded_multiplesearch = 1
 " The :Search command honors Vim's 'ignorecase' and 'smartcase' settings for
 " its own search.  You can use the \c and \C flags in the search pattern to
 " force case matching no matter the setting of 'ignorecase' and 'smartcase'.
+"
+" The :SearchBuffers command works just like :Search, but the search occurs in
+" all currently listed buffers (i.e., appear in the output of :ls).  The match
+" in all buffers will have the same color.  This is different than 
+" :bufdo Search <pattern> because in that case, each buffer will highlight the
+" match in a different color.  Thanks to Jeff Mei for the suggestion!
 " 
 " To clear the highlighting, issue the command
 " :SearchReset
@@ -102,11 +108,11 @@ function! s:MultipleSearchInit()
     let loopCount = 0
     while loopCount < s:MaxColors
         " Define the colors to use
-        execute 'highlight Search' . loopCount
-           \ . ' ctermbg=' . s:Strntok(s:ColorSequence, ',', loopCount + 1)
-           \ . ' guibg=' . s:Strntok(s:ColorSequence, ',', loopCount + 1) 
-           \ . ' ctermfg=' . s:Strntok(s:TextColorSequence, ',', loopCount + 1) 
-           \ . ' guifg=' . s:Strntok(s:TextColorSequence, ',', loopCount + 1) 
+	let bgColor = s:Strntok(s:ColorSequence, ',', loopCount + 1)
+	let fgColor = s:Strntok(s:TextColorSequence, ',', loopCount + 1)
+        execute 'highlight MultipleSearch' . loopCount
+           \ . ' ctermbg=' . bgColor . ' guibg=' . bgColor
+           \ . ' ctermfg=' . fgColor . ' guifg=' . fgColor
         let loopCount = loopCount + 1
     endwhile
 endfunction
@@ -154,14 +160,12 @@ function! s:GetNextSequenceNumber()
 endfunction
 
 " -----
-" MultipleSearch: Highlight the given pattern in the next available color.
+" DoSearch: The main searching function that highlights all matches in the
+" current buffer.
 " -----
-function! MultipleSearch(forwhat)
-    " Determine which search color to use.
-    let useSearch = "Search" . s:GetNextSequenceNumber()
-
+function! s:DoSearch(useSearch, forwhat)
     " Clear the previous highlighting for this color
-    execute 'silent syntax clear ' . useSearch
+    execute 'silent syntax clear ' . a:useSearch
 
     " Should it be a case-sensitive match or case-insensitive?
     if &ignorecase == 1  
@@ -187,7 +191,36 @@ function! MultipleSearch(forwhat)
     endif
 
     " Highlight the new search
-    execute 'syntax match ' . useSearch . ' "' . a:forwhat . '" containedin=ALL'
+    execute 'syntax match ' . a:useSearch . ' "' . a:forwhat . '" containedin=ALL'
+endfunction
+
+" -----
+" MultipleSearch: Highlight the given pattern in the next available color.
+" -----
+function! MultipleSearch(allBuffers, forwhat)
+    " Determine which search color to use.
+    let useSearch = "MultipleSearch" . s:GetNextSequenceNumber()
+
+    if a:allBuffers
+	" If a:allBuffers is on, we want to show the match in all currently
+	" listed buffers.
+	let counter = 1
+	let bufCount = bufnr("$")
+	let current = bufnr("%")
+
+	" Loop through all the buffers and perform the search in each one.
+	while counter <= bufCount
+	    if buflisted(counter)
+		exec "buffer " . counter
+		call s:DoSearch(useSearch, a:forwhat)
+	    endif
+	    let counter = counter + 1
+	endwhile
+	exec "buffer " . current
+    else
+	call s:DoSearch(useSearch, a:forwhat)
+    endif
+
 endfunction
 
 " -----
@@ -197,7 +230,7 @@ function! s:MultipleSearchReset()
     let s:colorToUse = 0
     let seq = 0
     while seq < s:MaxColors
-        execute 'syntax clear Search' . seq
+        execute 'syntax clear MultipleSearch' . seq
         let seq = seq + 1
     endwhile
 endfunction
@@ -213,18 +246,22 @@ let &cpo = s:save_cpo
 " Clear the current search selections and start over with the first color in
 " the sequence.
 if !(exists(":SearchReset") == 2)
-    command -n=0 SearchReset :silent call <SID>MultipleSearchReset() 
+    command -nargs=0 SearchReset :silent call <SID>MultipleSearchReset() 
 endif
 
 " Reinitialize the script after changing one of the global preferences.
 if !(exists(":SearchReinit") == 2)
-    command -n=0 SearchReinit :silent call <SID>MultipleSearchInit() 
+    command -nargs=0 SearchReinit :silent call <SID>MultipleSearchInit() 
 endif
 
-" Only autoload the Search command, since we shouldn't need to use
+" Only autoload the Search commands, since we shouldn't need to use
 " :SearchReset and :SearchReinit until after the first :Search.
 if exists('g:autoload') | finish | endif " used by the autoload generator
 
+if !(exists(":SearchBuffers") == 2)
+    command -nargs=* SearchBuffers :silent call MultipleSearch(1, <q-args>)
+endif
+
 if !(exists(":Search") == 2)
-    command -n=1 Search :silent call MultipleSearch(<q-args>)
+    command -nargs=* Search :silent call MultipleSearch(0, <q-args>)
 endif
